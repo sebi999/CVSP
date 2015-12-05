@@ -23,14 +23,15 @@ import org.opencv.core.Mat;
 import org.opencv.core.MatOfFloat;
 import org.opencv.core.MatOfInt;
 import org.opencv.imgproc.Imgproc;
+import org.opencv.utils.Converters;
 import org.opencv.android.CameraBridgeViewBase;
-import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener;
 import org.opencv.android.JavaCameraView;
 
 public class MainActivity extends Activity implements CvCameraViewListener2, View.OnTouchListener {
 
 	
     private static final String  TAG = "OpenCVTest";
+
 	
     private CameraBridgeViewBase mOpenCvCameraView;
     
@@ -43,6 +44,8 @@ public class MainActivity extends Activity implements CvCameraViewListener2, Vie
 	                    Log.i(TAG, "OpenCV loaded successfully");
 	                    mOpenCvCameraView.setOnTouchListener(MainActivity.this);
 	                    mOpenCvCameraView.enableView();
+
+	                    
 	                } break;
 	                default:
 	                {
@@ -55,7 +58,10 @@ public class MainActivity extends Activity implements CvCameraViewListener2, Vie
 	    public void onCreate(Bundle savedInstanceState) {
 	        super.onCreate(savedInstanceState);
 	        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-
+	        
+	        //System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
+	        
+            
 	        Log.d(TAG, "Creating and setting view");
 	        mOpenCvCameraView = (CameraBridgeViewBase) new JavaCameraView(this, -1);
 	        mOpenCvCameraView.enableFpsMeter();
@@ -92,13 +98,6 @@ public class MainActivity extends Activity implements CvCameraViewListener2, Vie
 	    }
 	    
 	    
-//	    @Override
-//	    public void onResume()
-//	    {
-//	        super.onResume();
-//	        OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_0_0, this, mLoaderCallback);
-//	    }
-	    
 	    public void onCameraViewStarted(int width, int height) {
 	    }
 
@@ -108,118 +107,153 @@ public class MainActivity extends Activity implements CvCameraViewListener2, Vie
 	    
 	    
 	    private boolean calcHist = false;
-	    private boolean calcedHist = false;
+	    private int keyframeCount = 0;
 	    
 	    public boolean onTouch(View view, MotionEvent event) {
-    		Log.i(TAG, "touch");
 	    	calcHist = true;
-	    	calcedHist = true;
+	    	keyframeCount++;
 	        return false;
 	    }
 
-	    public Mat onCameraFrame(Mat inputFrame) {
-	    	
-    		//Mat inputFrame = cameraFrame.rgba();
-
-	    	if(calcHist){
-		    	calcHist(inputFrame);
-	    		calcHist = false;
-	    	}
-        
-	        return inputFrame;
-	    }
 	    
 
-	    Mat hist;
+	    Mat bgHist;
+	    Mat fgHist;
 	    
 	    public Mat onCameraFrame(CvCameraViewFrame cameraFrame) {
 	    	
     		Mat inputFrame = cameraFrame.rgba();
     		Mat outputFrame = inputFrame.clone();
-    		
+
+	    	Imgproc.cvtColor(inputFrame, inputFrame, Imgproc.COLOR_RGBA2RGB);
+	    	Imgproc.cvtColor(inputFrame, inputFrame, Imgproc.COLOR_RGB2HSV);
+	    	
 	    	if(calcHist){
 	    		calcHist = false;
-	    		
-		    	
-		    	hist = calcHist(inputFrame);
-		    	
-		    	Imgproc.cvtColor(hist, hist, Imgproc.COLOR_GRAY2RGBA);
-		    	hist.convertTo(hist, CvType.CV_8UC4);
-		    	
-		    	Log.i(TAG, "hist: " +  CvType.typeToString(hist.type()) + " " + hist.height() + " " + hist.width());
-		    	Log.i(TAG, "outputFrame: " +  CvType.typeToString(outputFrame.type()) + " " + outputFrame.height() + " " + outputFrame.width());
-		    	Log.i(TAG, "inputFrame: " +  CvType.typeToString(inputFrame.type()));
+	    		//if(!calcedHist)
+	    		if(keyframeCount < 6){
+	    			bgHist = calcBgHist(inputFrame);
+	    			log("bgframes: " + (keyframeCount));
+//			    	Imgproc.cvtColor(bgHist, bgHist, Imgproc.COLOR_GRAY2RGBA);
+//			    	bgHist.convertTo(bgHist, CvType.CV_8UC4);
+	    		}else if(keyframeCount<11){
+//	    			if(fgMask == null){
+//	    				fgMask = Mat.zeros(inputFrame.height(), inputFrame.width(), CvType.CV_8U);
+//	    				Mat ones = Mat.ones((int)(inputFrame.height() * 0.5), (int)(inputFrame.width() * 0.5), CvType.CV_8U);
+//	    				int startPixY = (int)((inputFrame.height() - ones.height()) * 0.5);
+//	    				ones.copyTo(fgMask.submat(startPixY, startPixY + ones.height(), inputFrame.width()-ones.width(),   inputFrame.width()));
+//	    			}
+//
+//	    			log("mask: " + fgMask.size() + " " + fgMask.channels() +" " + CvType.typeToString(fgMask.type()));
+//	    			log("inputFrame: " + inputFrame.size() + " " + inputFrame.channels() );
+	    			log("fgframes: " + (keyframeCount-5));
+	    			fgHist = calcFgHist(inputFrame.submat((int)(inputFrame.height() * 0.25), (int)(inputFrame.height() * 0.75), (int)(inputFrame.width() * 0.25), inputFrame.width() ));
+	    			
+	    			if(keyframeCount==10){
+	    				framesFg.release();
+	    				framesBg.release();
+	    				
+	    			}
+	    			
+	    			
+	    		}
 		    	
 	    	}
 
-	    	if(calcedHist){
-
-		    	hist.copyTo(outputFrame.submat(outputFrame.height() - hbins, outputFrame.height(), 0,  sbins));
-	    	}
+//	    	if(keyframeCount>0){
+//	    		bgHist.copyTo(outputFrame.submat(outputFrame.height() - hbins, outputFrame.height(), 0,  sbins));
+//	    	}
+//	    	
+	    	
+	    	if(keyframeCount>=1){
+    			List<Mat> frame = new ArrayList<Mat>();
+    			Mat temp = new Mat();
+    			inputFrame.copyTo(temp);
+    			
+    			frame.add(temp);
+        		MatOfInt channels = new MatOfInt(1,2);
+    			MatOfFloat hranges = new MatOfFloat( 0f, 180f, 0f, 256f );
+    			Mat backProj = new Mat(inputFrame.size(), inputFrame.type());
+    			
+    			
+    			double scale = 1d;
+    			//Mat images_mat = Converters.vector_Mat_to_Mat(frame);
+    			//log(images_mat.nativeObj+ " " + channels.nativeObj + " " + fgHist.nativeObj  + " " + backProj.nativeObj  + " " + hranges.nativeObj );
+    			
+    			Imgproc.calcBackProject(frame, channels, bgHist, backProj, hranges, scale);
+//    			
+//    			outputFrame = backProj;
+    		}
 
 	    	
 	        return outputFrame;
 	    }
 	    
+	    private Mat framesFg;
+	    public Mat calcFgHist(Mat inputFrame){
+
+	    	if(framesFg == null)
+	    		framesFg = new Mat();
+	    	
+	    	framesFg.push_back(inputFrame);
+    		
+    		List<Mat> framesList = new ArrayList<Mat>();
+    		framesList.add(framesFg);
+	    	return calcHist(framesList);
+	    }
+
+	    private Mat framesBg;
+	    public Mat calcBgHist(Mat inputFrame){
+	    	
+	    	if(framesBg == null)
+	    		framesBg = new Mat();
+	    	
+	    	framesBg.push_back(inputFrame);
+    		
+    		List<Mat> framesList = new ArrayList<Mat>();
+    		framesList.add(framesBg);
+	    	return calcHist(framesList);
+	    }
+
+
 	    private int hbins = 30;
 	    private int sbins = 32;
 	    
-	    public Mat calcHist(Mat inputFrame){
+	    public Mat calcHist(List<Mat> framesList){
 
-	    		Log.i(TAG, "calchist");
-		    	//Mat outputFrame = inputFrame.clone();
-		    	//inputFrame.convertTo(inputFrame, CvType.CV_8UC4);
-		    	
-//	    	    int size = (int) (inputFrame.total() * inputFrame.channels());
-//	    	    double[] temp = new double[size];
-//	    	    //byte[] temp = new byte[size];
-//	    	    //int[] temp = new int[size];
-//	    	    
-//	    	    inputFrame.get(0, 0, temp);
-//	    	    for (int i = 0; i < size; i++)
-//	    	       temp[i] = (temp[i] / 2);
-//	    	    
-//				outputFrame.put(0, 0, temp);
+//	    	Mat frame = new Mat();
+//	    	inputFrame.copyTo(frame);
+//    		
+//	    	if(frames == null)
+//	    		frames = new Mat();
+//	    	
+//    		frames.push_back(frame);
+//    		
+//    		List<Mat> framesList = new ArrayList<Mat>();
+//    		framesList.add(frames);
 
-		    	Imgproc.cvtColor(inputFrame, inputFrame, Imgproc.COLOR_RGBA2RGB);
-		    	
-		    	Mat hsv = new Mat();
+    		MatOfInt channels = new MatOfInt(1,2);
+			MatOfInt histSize = new MatOfInt(hbins, sbins);
+			MatOfFloat hranges = new MatOfFloat( 0f, 180f, 0f, 256f );
+			Mat hist = new Mat();
 
-		    	Imgproc.cvtColor(inputFrame, inputFrame, Imgproc.COLOR_RGB2HSV);
-		    	
-	    		List<Mat> frames = new ArrayList<Mat>();
-	    		
-	    		frames.add(inputFrame);
-	    		
-
-	    		MatOfInt channels = new MatOfInt(0, 1);
-				MatOfInt histSize = new MatOfInt(hbins, sbins);
-				MatOfFloat hranges = new MatOfFloat( 0f, 180f, 0f, 256f );
-	    		
-	    		
-//
-//	    		MatOfInt channels = new MatOfInt(0, 1, 2, 3);
-//				MatOfInt histSize = new MatOfInt(256, 4, 1, 1);
-//				MatOfFloat hranges = new MatOfFloat( 0f, 255f, 0f, 255f, 0f, 255f, 0f, 255f );
-	    		
-//	    		MatOfInt channels = new MatOfInt(0);
-//				MatOfInt histSize = new MatOfInt(256);
-//				MatOfFloat hranges = new MatOfFloat( 0f, 255f);
-
-	    		Mat hist = new Mat();
-				Imgproc.calcHist(frames, channels, new Mat(), hist, histSize, hranges);
-	    		
-				int size = (int)hist.total();
-				
-				
-	    		Log.i(TAG, hist.size() + "");
-	    		Log.i(TAG, hist.total() + "");
-	    		Log.i(TAG, hist.dims() + "");
+			Imgproc.calcHist(framesList, channels, new Mat(), hist, histSize, hranges, true);
+			Core.normalize(hist, hist, 0, 255, Core.NORM_MINMAX, -1);
+			
+			
+	    	//log("hist: " +  CvType.typeToString(hist.type()) + " " + hist.toString() + " " + hist.total());
 	    	
-	    		return hist;
+			hist.convertTo(hist, CvType.CV_8UC1);
+			
+    		return hist;
+	    }
+	    
+	    private static void log(String msg){
+	    	Log.i(TAG, msg);
+	    	
+	    	
 	    }
 
-	    
 	    
 	
 	}
